@@ -4,7 +4,7 @@
     "type": "git",
     "url": "git+https://github.com/nishit130/dsh-notification.git"
   },
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Desktop + webhook notifications when your DeepSeek Harness agent finishes a turn, hits an error, or needs approval.",
   "type": "module",
   "main": "index.js",
@@ -41,7 +41,9 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "inject": ["@deepseek-ai/dsh-client-runtime"],
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ],
       "platform": "web"
     }
   }
