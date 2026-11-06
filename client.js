@@ -10,9 +10,16 @@
  *   - a session finishes (running true→false with nothing pending)  → "Agent finished"
  *   - a session starts waiting on you (pendingInteraction appears)  → "Waiting for you"
  *
+ * A popup names the Session that raised it, and clicking it opens that
+ * Session: ctx.uiWorkspace.openSession() switches the main view back to the
+ * Conversation and persists the choice. Pending interactions are read from
+ * ctx.uiSession.sessionStatus, which is where they live — a catalog row in
+ * ctx.sessions.list never carries `pendingInteraction`.
+ *
  * Permission is requested on the first user gesture (browsers reject
  * programmatic prompts without one). By default popups show only while the
- * tab is hidden — a visible tab already has your attention.
+ * window is hidden or unfocused — a window you are looking at already has
+ * your attention.
  */
 window.__ModuleLoader__.load({
   id: "dsh-notification",
@@ -57,13 +64,38 @@ window.__ModuleLoader__.load({
       if (!canNotify()) return;
       ensurePermission();
 
-      function show(body) {
-        if (Notification.permission !== "granted") return;
-        if (onlyWhenHidden && document.visibilityState === "visible") return;
+      // Open the Session behind a popup. uiWorkspace.openSession switches the
+      // main view and selects the Conversation panel, so the click lands on the
+      // exact conversation that raised the notification; it persists the choice
+      // as dsh.sessions.current, so a reload returns to the same Session.
+      function openSession(sessionId) {
+        if (!sessionId) return;
+        var workspace = ctx.get("uiWorkspace");
         try {
-          var n = new Notification(title, { body: body, tag: "dsh-notification" });
+          if (workspace && typeof workspace.openSession === "function") workspace.openSession(sessionId);
+        } catch (e) {}
+      }
+
+      // "It has your attention" means visible AND focused. An unfocused window
+      // — another app in front, minimized, or on another Space — does not, and
+      // that is exactly when the click-through matters.
+      function userIsLooking() {
+        return document.visibilityState === "visible" && typeof document.hasFocus === "function" && document.hasFocus();
+      }
+
+      function show(body, sessionId, label) {
+        if (Notification.permission !== "granted") return;
+        if (onlyWhenHidden && userIsLooking()) return;
+        try {
+          var n = new Notification(title, {
+            body: label ? label + " — " + body : body,
+            // One tag per Session: finishing in Session B must not replace the
+            // unread "needs you" popup of Session A.
+            tag: sessionId ? "dsh-notification:" + sessionId : "dsh-notification",
+          });
           n.onclick = function () {
             try { window.focus(); } catch (e) {}
+            openSession(sessionId);
             n.close();
           };
         } catch (e) {}
@@ -73,10 +105,27 @@ window.__ModuleLoader__.load({
       if (!sessions || !sessions.list) return;
       var list = sessions.list;
 
-      // sessionId -> { pending, running, runningSince }
+      // Pending interactions are a ui-session fact, not a catalog one:
+      // sessionStatus maps id → { running, pendingInteraction, completionUnread }.
+      var uiSession = ctx.get("uiSession");
+      var status = uiSession && uiSession.sessionStatus ? uiSession.sessionStatus : null;
+
+      function pendingOf(id) {
+        if (!status) return undefined;
+        var row = status.getSnapshot().get(id);
+        return row ? row.pendingInteraction : undefined;
+      }
+
+      function labelOf(row) {
+        var display = row && row.displayTitle;
+        // An untitled Session displays its raw id; that is noise in a popup.
+        return typeof display === "string" && display && display !== row.id ? display : "";
+      }
+
+      // sessionId -> { pending, running, runningSince, label }
       var prev = new Map();
       function snapshotRow(row) {
-        return { pending: row.pendingInteraction, running: !!row.running, runningSince: 0 };
+        return { pending: pendingOf(row.id), running: !!row.running, runningSince: 0, label: labelOf(row) };
       }
       function seed() {
         prev.clear();
@@ -87,9 +136,8 @@ window.__ModuleLoader__.load({
           if (row) prev.set(ids[i], snapshotRow(row));
         }
       }
-      seed();
 
-      var unsub = list.subscribe(function () {
+      function scan() {
         var snap = list.getSnapshot();
         var ids = snap.ids || [];
         for (var i = 0; i < ids.length; i++) {
@@ -105,26 +153,38 @@ window.__ModuleLoader__.load({
           // Track when a run started so short turns stay quiet, mirroring
           // the host side's minTurnDurationMs gate.
           if (!p.running && row.running) p.runningSince = Date.now();
+          var pending = pendingOf(id);
           // Waiting on the user: pendingInteraction appeared.
-          if (notifyOnApproval && p.pending === undefined && row.pendingInteraction !== undefined) {
-            var kind = typeof row.pendingInteraction === "string" ? row.pendingInteraction : "input";
-            show("Waiting for you — " + kind);
+          if (notifyOnApproval && p.pending === undefined && pending !== undefined) {
+            var kind = typeof pending === "string" ? pending : "input";
+            show("Waiting for you — " + kind, id, p.label);
           }
           // Turn finished: running flipped off with nothing pending.
-          if (notifyOnIdle && p.running && !row.running && row.pendingInteraction === undefined) {
+          if (notifyOnIdle && p.running && !row.running && pending === undefined) {
             var elapsed = p.runningSince ? Date.now() - p.runningSince : null;
             if (elapsed === null || elapsed >= minTurnMs) {
-              show(elapsed === null ? "Agent finished" : "Agent finished — " + formatDuration(elapsed));
+              show(elapsed === null ? "Agent finished" : "Agent finished — " + formatDuration(elapsed), id, p.label);
             }
           }
-          p.pending = row.pendingInteraction;
+          p.pending = pending;
           p.running = !!row.running;
+          p.label = labelOf(row) || p.label;
           prev.set(id, p);
         }
-      });
+      }
+
+      seed();
+
+      var unsubList = list.subscribe(scan);
+      // Approvals land on the status map, which the catalog list does not
+      // broadcast, so watch it as well.
+      var unsubStatus = status && status.subscribe ? status.subscribe(scan) : null;
 
       ctx.effect(function () {
-        return function () { unsub(); };
+        return function () {
+          unsubList();
+          if (unsubStatus) unsubStatus();
+        };
       }, "dsh-notification: session watch");
     }
 
