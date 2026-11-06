@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+- Clicking a browser popup opens the Session that raised it
+  (`ctx.uiWorkspace.openSession`), and every popup names that Session in its
+  body. Popups now carry one tag per Session, so a second Session finishing no
+  longer replaces an unread "waiting for you" popup.
+
 ### Fixed
 - Desktop notifications no longer crash the dsh host process when the
   notifier binary is missing (e.g. headless Linux without `notify-send`).
@@ -10,6 +16,14 @@
   and Node rethrew the event as `uncaughtException` on every turn end.
   Every platform branch now attaches a no-op `'error'` listener synchronously,
   keeping the notifier strictly best-effort. (closes #1)
+- The browser channel never fired "Waiting for you": it read
+  `pendingInteraction` off the `ctx.sessions.list` catalog row, which never
+  carries one. It reads `ctx.uiSession.sessionStatus` — where pending
+  interactions actually live — and subscribes to it, because an approval does
+  not change the catalog.
+- The browser channel stayed silent whenever the page read as visible, so a
+  window behind another app never notified. `browserOnlyWhenHidden` now
+  suppresses popups only while the window is visible **and** focused.
 
 ## 0.1.1 — 2026-08-21
 
