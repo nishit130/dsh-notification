@@ -44,10 +44,17 @@ Three channels, three places:
 | Webhook (`webhookUrl`) | wherever the URL points | phones, Slack, unattended runs |
 
 Browser notifications use the standard `Notification` API: the Web UI asks for permission on
-your first click or keypress, and by default popups appear **only while the tab is hidden** —
-a visible tab already has your attention (set `browserOnlyWhenHidden: false` to change that).
+your first click or keypress, and by default popups appear **only while the window is hidden or
+unfocused** — a window you are looking at already has your attention (set
+`browserOnlyWhenHidden: false` to change that).
 
-Running everything on one machine with the tab hidden? You'd get both a desktop and a browser
+Each popup names the Session that raised it, and **clicking it opens that conversation**: the
+main view switches back to the Conversation panel and remembers the Session, so a reload returns
+to it. Popups are kept one per Session, so a second Session finishing does not replace an unread
+"needs you" popup. The host-side desktop channel cannot do this — a `display notification` has no
+click action to hang an open on.
+
+Running everything on one machine with the window hidden? You'd get both a desktop and a browser
 popup for the same event — turn one channel off (`desktop: false` or `browser: false`) if the
 pair bothers you.
 
@@ -75,7 +82,7 @@ Override the row in your profile's `cordis.patch.yml` (or via the Settings UI):
 | `minTurnDurationMs` | number | `5000` | Skip notifications for quick turns |
 | `desktop` | boolean | `true` | Native desktop notification on the server host |
 | `browser` | boolean | `true` | Browser `Notification` popups in the Web UI |
-| `browserOnlyWhenHidden` | boolean | `true` | Suppress browser popups while the tab is visible |
+| `browserOnlyWhenHidden` | boolean | `true` | Suppress browser popups while the window is visible and focused |
 | `webhookUrl` | string | `''` | Optional POST target (Slack-compatible payload) |
 | `title` | string | `'DeepSeek Harness'` | Desktop notification title |
 

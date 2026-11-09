@@ -20,7 +20,7 @@
   ],
   "scripts": {
     "check": "node --check index.js && node --check client.js",
-    "test": "npm run check && node --test test/index.test.js"
+    "test": "npm run check && node --test test/*.test.js"
   },
   "keywords": [
     "dsh",
