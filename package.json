@@ -16,7 +16,9 @@
   "files": [
     "index.js",
     "client.js",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "toast.ps1",
+    "focus-window.ps1"
   ],
   "scripts": {
     "check": "node --check index.js && node --check client.js",
