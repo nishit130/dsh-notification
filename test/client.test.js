@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
+import { FOCUS_ROUTE } from '../index.js'
 
 const SOURCE = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
 
@@ -19,6 +20,7 @@ const SOURCE = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
 function harness({ hidden = true, focused = false, permission = 'granted', clock = { now: 0 } } = {}) {
   const popups = []
   const focusedWindow = []
+  const fetches = []
 
   function FakeDate() {}
   FakeDate.now = () => clock.now
@@ -49,7 +51,14 @@ function harness({ hidden = true, focused = false, permission = 'granted', clock
     focus: () => focusedWindow.push(true),
   }
 
-  const sandbox = { window, document, Notification: FakeNotification, Date: FakeDate, console }
+  const sandbox = {
+    window,
+    document,
+    Notification: FakeNotification,
+    Date: FakeDate,
+    console,
+    fetch: (url, init) => { fetches.push({ url, init }); return Promise.resolve({ ok: true }) },
+  }
   vm.createContext(sandbox)
   vm.runInContext(SOURCE, sandbox)
 
@@ -95,6 +104,7 @@ function harness({ hidden = true, focused = false, permission = 'granted', clock
     exported,
     popups,
     focusedWindow,
+    fetches,
     opened,
     catalog,
     sessionStatus,
@@ -186,6 +196,21 @@ test('clicking a popup opens the Session that raised it', () => {
   page.popups[0].onclick()
   assert.deepEqual(page.opened, ['a'])
   assert.equal(page.focusedWindow.length, 1)
+})
+
+test('clicking a popup asks the host to restore the window', () => {
+  const page = harness()
+  page.apply({ minTurnDurationMs: 0 })
+  page.addSession('a', { title: 'Session A', running: true })
+  page.setRunning('a', false)
+
+  page.popups[0].onclick()
+  assert.equal(page.fetches.length, 1)
+  // The page half is a hand-written bundle, so this assertion is what keeps
+  // its route literal from drifting away from the host's FOCUS_ROUTE.
+  assert.equal(page.fetches[0].url, FOCUS_ROUTE)
+  assert.equal(page.fetches[0].init.method, 'POST')
+  assert.equal(page.fetches[0].init.headers['x-dsh-notification-action'], 'focus')
 })
 
 test('a pending interaction notifies from uiSession.sessionStatus', () => {

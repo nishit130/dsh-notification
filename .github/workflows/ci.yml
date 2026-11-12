@@ -19,3 +19,33 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+  # The Windows half ships PowerShell: parse both helpers with the same
+  # Windows PowerShell 5.1 the host invokes, and run the suite where the
+  # win32 spawn options and the scripts are actually in play.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Parse the PowerShell helpers
+        shell: powershell
+        run: |
+          $failed = $false
+          foreach ($file in @('toast.ps1', 'focus-window.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "$file : $($_.Message)" }
+              $failed = $true
+            } else {
+              Write-Output "$file : parses clean"
+            }
+          }
+          if ($failed) { exit 1 }

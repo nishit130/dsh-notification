@@ -16,6 +16,12 @@
  * ctx.uiSession.sessionStatus, which is where they live — a catalog row in
  * ctx.sessions.list never carries `pendingInteraction`.
  *
+ * Clicking also asks the host to raise the window. window.focus() alone only
+ * focuses the frame: inside the DSH Electron shell a minimized or hidden
+ * window stays where it is, so the click used to look like a no-op. The host
+ * half exposes POST /plugins/dsh-notification/focus, which restores the
+ * desktop window (Win32 on Windows, osascript on macOS, wmctrl on Linux).
+ *
  * Permission is requested on the first user gesture (browsers reject
  * programmatic prompts without one). By default popups show only while the
  * window is hidden or unfocused — a window you are looking at already has
@@ -28,6 +34,24 @@ window.__ModuleLoader__.load({
     var exports = module.exports;
 
     var inject = ["sessions"];
+
+    // Host route that restores + focuses the DSH window (see index.js).
+    var FOCUS_ROUTE = "/plugins/dsh-notification/focus";
+
+    // Ask the host to raise the window. Fire-and-forget: the popup closes
+    // right after, and a host without the route (older version, remote server,
+    // headless) simply answers nothing.
+    function focusWindowInHost() {
+      if (typeof fetch !== "function") return;
+      try {
+        fetch(FOCUS_ROUTE, {
+          method: "POST",
+          headers: { "x-dsh-notification-action": "focus" },
+          body: "{}",
+          keepalive: true,
+        }).catch(function () {});
+      } catch (e) {}
+    }
 
     function canNotify() {
       return typeof Notification !== "undefined";
@@ -95,6 +119,7 @@ window.__ModuleLoader__.load({
           });
           n.onclick = function () {
             try { window.focus(); } catch (e) {}
+            focusWindowInHost();
             openSession(sessionId);
             n.close();
           };
